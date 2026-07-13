@@ -268,7 +268,54 @@ public class Carrier: NSObject {
         Log.d(Carrier.TAG, "Current carrier UserId: \(userId)")
         return userId
     }
-    
+
+    /// Create an accountless rendezvous authentication proof using the
+    /// identity already loaded by this Carrier instance.
+    ///
+    /// This method performs no Carrier network operation. The private key and
+    /// intermediate shared keys remain inside the native core.
+    ///
+    /// - Parameters:
+    ///   - serverPublicKey: 32-byte ephemeral X25519 RSP node public key.
+    ///   - transcript: Exact RSP authentication transcript bytes (1...65536).
+    /// - Returns: A 32-byte HMAC-SHA256 proof.
+    /// - Throws: CarrierError.InvalidArgument or the native Carrier error.
+    @objc(createIdentityAuthProofWithServerPublicKey:transcript:error:)
+    public func createIdentityAuthProof(serverPublicKey: Data,
+                                        transcript: Data) throws -> Data {
+        guard serverPublicKey.count == 32,
+              !transcript.isEmpty,
+              transcript.count <= 65536 else {
+            throw CarrierError.InvalidArgument
+        }
+        guard let carrier = ccarrier else {
+            throw CarrierError.IllegalState
+        }
+
+        var proof = [UInt8](repeating: 0, count: 32)
+        let result = proof.withUnsafeMutableBufferPointer { proofBuffer -> Int32 in
+            return serverPublicKey.withUnsafeBytes {
+                (serverPointer: UnsafePointer<UInt8>) -> Int32 in
+                return transcript.withUnsafeBytes {
+                    (transcriptPointer: UnsafePointer<UInt8>) -> Int32 in
+                    return carrier_identity_create_auth_proof(
+                        carrier,
+                        serverPointer,
+                        transcriptPointer,
+                        transcript.count,
+                        proofBuffer.baseAddress)
+                }
+            }
+        }
+
+        guard result >= 0 else {
+            let errno = getErrorCode()
+            Log.e(Carrier.TAG, "Create identity auth proof error: 0x%X", errno)
+            throw CarrierError.FromErrorCode(errno: errno)
+        }
+        return Data(proof)
+    }
+
     /// Update the nospam for carrier node address
     ///
     /// Update the 4-byte nospam part of the Carrier address with host byte order

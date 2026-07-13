@@ -974,6 +974,18 @@ internal func carrier_get_userid(_ carrier: OpaquePointer!,
                              _ userid: UnsafeMutablePointer<Int8>!,
                              _ len: Int) -> UnsafeMutablePointer<Int8>!
 
+/**
+ * Create an RSP/1 Carrier identity proof without starting peer discovery or
+ * exposing the identity secret.
+ */
+@_silgen_name("carrier_identity_create_auth_proof")
+internal func carrier_identity_create_auth_proof(
+    _ carrier: OpaquePointer!,
+    _ serverPublicKey: UnsafePointer<UInt8>!,
+    _ transcript: UnsafePointer<UInt8>!,
+    _ transcriptLength: Int,
+    _ proof: UnsafeMutablePointer<UInt8>!) -> Int32
+
 // MARK: - node information
 
 /**
