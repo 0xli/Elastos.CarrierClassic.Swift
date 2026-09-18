@@ -148,3 +148,105 @@ internal func convertCUserInfoToCarrierUserInfo(_ cInfo: CUserInfo) -> CarrierUs
     
     return info
 }
+
+// MARK: - AgentNet proto v2
+
+/// What a Carrier client advertises to its friends (AgentNet client metadata).
+///
+/// `protoVersion` follows the JavaScript peer's definition: 0 legacy, 1 client
+/// metadata + 16 MB bulk messages, 2 = the *application* answers DNPACK1 text
+/// delivery ACKs. The SDK advertises 1 by itself; an app sets 2 only if it
+/// implements the ACK, because a peer that sees 2 keeps re-sending each text
+/// until the app acknowledges it.
+@objc(ELACarrierClientInfo)
+public class CarrierClientInfo: NSObject {
+    @objc public var protoVersion: UInt32 = 0
+    /// "ios" | "android" | "js" | "darwin" | "linux" | "win32"
+    @objc public var platform: String = ""
+    @objc public var osVersion: String = ""
+    @objc public var appVersion: String = ""
+
+    public override init() { super.init() }
+
+    @objc public convenience init(protoVersion: UInt32, platform: String, osVersion: String, appVersion: String) {
+        self.init()
+        self.protoVersion = protoVersion
+        self.platform = platform
+        self.osVersion = osVersion
+        self.appVersion = appVersion
+    }
+
+    public override var description: String {
+        "clientInfo[proto \(protoVersion), \(platform) \(osVersion), \(appVersion)]"
+    }
+}
+
+internal func convertCarrierClientInfoToCClientInfo(_ info: CarrierClientInfo) -> CClientInfo {
+    var c = CClientInfo()
+    c.proto_version = info.protoVersion
+    info.platform.writeToCCharPointer(&c.platform)
+    info.osVersion.writeToCCharPointer(&c.os_version)
+    info.appVersion.writeToCCharPointer(&c.app_version)
+    return c
+}
+
+internal func convertCClientInfoToCarrierClientInfo(_ c: CClientInfo) -> CarrierClientInfo {
+    var temp = c
+    let info = CarrierClientInfo()
+    info.protoVersion = c.proto_version
+    info.platform = String(cCharPointer: &temp.platform)
+    info.osVersion = String(cCharPointer: &temp.os_version)
+    info.appVersion = String(cCharPointer: &temp.app_version)
+    return info
+}
+
+// MARK: - AgentNet proto v2
+
+/// The profile extension a Carrier identity publishes in its userinfo
+/// (AgentNet): pointers, never bytes — the app fetches the avatar itself.
+/// Every field is optional; the whole userinfo must fit toxcore's 1007-byte
+/// status message, so `Carrier.setSelfProfileExt` can refuse a long profile.
+@objc(ELACarrierProfileExt)
+public class CarrierProfileExt: NSObject {
+    /// https URL of an avatar image (max 255 bytes)
+    @objc public var avatarUrl: String = ""
+    /// a personal / site link (max 255 bytes)
+    @objc public var url: String = ""
+    /// "<name>.beagles.eth" — a display hint, not proof (max 63 bytes)
+    @objc public var ens: String = ""
+    /// small JSON for forward growth (max 255 bytes)
+    @objc public var extra: String = ""
+
+    public override init() { super.init() }
+
+    @objc public convenience init(avatarUrl: String, url: String, ens: String, extra: String) {
+        self.init()
+        self.avatarUrl = avatarUrl
+        self.url = url
+        self.ens = ens
+        self.extra = extra
+    }
+
+    public override var description: String {
+        "profileExt[avatar \(avatarUrl), url \(url), ens \(ens), extra \(extra)]"
+    }
+}
+
+internal func convertCarrierProfileExtToCProfileExt(_ ext: CarrierProfileExt) -> CProfileExt {
+    var c = CProfileExt()
+    ext.avatarUrl.writeToCCharPointer(&c.avatar_url)
+    ext.url.writeToCCharPointer(&c.url)
+    ext.ens.writeToCCharPointer(&c.ens)
+    ext.extra.writeToCCharPointer(&c.extra)
+    return c
+}
+
+internal func convertCProfileExtToCarrierProfileExt(_ c: CProfileExt) -> CarrierProfileExt {
+    var temp = c
+    let ext = CarrierProfileExt()
+    ext.avatarUrl = String(cCharPointer: &temp.avatar_url)
+    ext.url = String(cCharPointer: &temp.url)
+    ext.ens = String(cCharPointer: &temp.ens)
+    ext.extra = String(cCharPointer: &temp.extra)
+    return ext
+}

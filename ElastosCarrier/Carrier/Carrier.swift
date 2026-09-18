@@ -269,6 +269,151 @@ public class Carrier: NSObject {
         return userId
     }
 
+    // MARK: - AgentNet proto v2: client metadata, profile extension, identity signatures
+
+    /// Set what this client advertises to friends: platform, OS and app
+    /// version, and the protocol version the *app* implements — 2 only if the
+    /// app answers DNPACK1 text delivery ACKs (Beagle does), else 0 or 1.
+    @objc(setClientInfo:error:)
+    public func setClientInfo(_ info: CarrierClientInfo) throws {
+        guard info.platform.utf8.count <= 15, info.osVersion.utf8.count <= 31,
+              info.appVersion.utf8.count <= 63 else {
+            throw CarrierError.InvalidArgument
+        }
+        guard let carrier = ccarrier else { throw CarrierError.IllegalState }
+        var cinfo = convertCarrierClientInfoToCClientInfo(info)
+        let result = carrier_set_client_info(carrier, &cinfo)
+        guard result >= 0 else {
+            let errno = getErrorCode()
+            Log.e(Carrier.TAG, "Set client info error: 0x%X", errno)
+            throw CarrierError.FromErrorCode(errno: errno)
+        }
+    }
+
+    /// What this client advertises.
+    @objc(getClientInfoAndReturnError:)
+    public func getClientInfo() throws -> CarrierClientInfo {
+        guard let carrier = ccarrier else { throw CarrierError.IllegalState }
+        var cinfo = CClientInfo()
+        let result = carrier_get_client_info(carrier, &cinfo)
+        guard result >= 0 else { throw CarrierError.FromErrorCode(errno: getErrorCode()) }
+        return convertCClientInfoToCarrierClientInfo(cinfo)
+    }
+
+    /// What a friend's client advertised. `protoVersion` 0 is a legacy peer:
+    /// no more than 5 MB per message to it, and no profile extension from it.
+    @objc(getFriendClientInfo:error:)
+    public func getFriendClientInfo(_ friendId: String) throws -> CarrierClientInfo {
+        guard let carrier = ccarrier else { throw CarrierError.IllegalState }
+        var cinfo = CClientInfo()
+        let result = friendId.withCString { carrier_get_friend_client_info(carrier, $0, &cinfo) }
+        guard result >= 0 else {
+            let errno = getErrorCode()
+            Log.e(Carrier.TAG, "Get client info of friend \(friendId) error: 0x%X", errno)
+            throw CarrierError.FromErrorCode(errno: errno)
+        }
+        return convertCClientInfoToCarrierClientInfo(cinfo)
+    }
+
+    /// Publish this identity's profile extension (avatar URL, link, ENS name,
+    /// extra). Throws `CarrierError.InvalidArgument` when a field is too long
+    /// or the whole userinfo would exceed the 1007-byte status message.
+    @objc(setSelfProfileExt:error:)
+    public func setSelfProfileExt(_ ext: CarrierProfileExt) throws {
+        guard ext.avatarUrl.utf8.count <= 255, ext.url.utf8.count <= 255,
+              ext.ens.utf8.count <= 63, ext.extra.utf8.count <= 255 else {
+            throw CarrierError.InvalidArgument
+        }
+        guard let carrier = ccarrier else { throw CarrierError.IllegalState }
+        var cext = convertCarrierProfileExtToCProfileExt(ext)
+        let result = carrier_set_self_profile_ext(carrier, &cext)
+        guard result >= 0 else {
+            let errno = getErrorCode()
+            Log.e(Carrier.TAG, "Set profile extension error: 0x%X", errno)
+            throw CarrierError.FromErrorCode(errno: errno)
+        }
+    }
+
+    @objc(getSelfProfileExtAndReturnError:)
+    public func getSelfProfileExt() throws -> CarrierProfileExt {
+        guard let carrier = ccarrier else { throw CarrierError.IllegalState }
+        var cext = CProfileExt()
+        let result = carrier_get_self_profile_ext(carrier, &cext)
+        guard result >= 0 else { throw CarrierError.FromErrorCode(errno: getErrorCode()) }
+        return convertCProfileExtToCarrierProfileExt(cext)
+    }
+
+    /// A friend's published profile extension (empty fields when none).
+    @objc(getFriendProfileExt:error:)
+    public func getFriendProfileExt(_ friendId: String) throws -> CarrierProfileExt {
+        guard let carrier = ccarrier else { throw CarrierError.IllegalState }
+        var cext = CProfileExt()
+        let result = friendId.withCString { carrier_get_friend_profile_ext(carrier, $0, &cext) }
+        guard result >= 0 else {
+            let errno = getErrorCode()
+            Log.e(Carrier.TAG, "Get profile extension of friend \(friendId) error: 0x%X", errno)
+            throw CarrierError.FromErrorCode(errno: errno)
+        }
+        return convertCProfileExtToCarrierProfileExt(cext)
+    }
+
+    /// Sign a message with this Carrier identity (XEdDSA over the identity's
+    /// X25519 key). Anyone holding the userid verifies it with
+    /// `Carrier.identityVerify`; the JavaScript peer and beagle-web verify the
+    /// same bytes. Behind "Sign in with Beagle" (sign
+    /// `"decent-auth\n<origin>\n<nonce>"`) and beagles.eth registration.
+    /// Signatures are randomized. Returns 64 bytes.
+    @objc(identitySign:error:)
+    public func identitySign(_ message: Data) throws -> Data {
+        guard !message.isEmpty else { throw CarrierError.InvalidArgument }
+        guard let carrier = ccarrier else { throw CarrierError.IllegalState }
+        var signature = [UInt8](repeating: 0, count: 64)
+        let result = signature.withUnsafeMutableBufferPointer { sig -> Int32 in
+            message.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> Int32 in
+                carrier_identity_sign(carrier,
+                                      raw.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                                      message.count, sig.baseAddress)
+            }
+        }
+        guard result >= 0 else {
+            let errno = getErrorCode()
+            Log.e(Carrier.TAG, "Identity sign error: 0x%X", errno)
+            throw CarrierError.FromErrorCode(errno: errno)
+        }
+        return Data(signature)
+    }
+
+    /// Verify a signature from `identitySign` (or the JavaScript peer)
+    /// against a userid. Needs no Carrier instance; false for any bad input.
+    @objc(identityVerifyUserId:message:signature:)
+    public static func identityVerify(userId: String, message: Data, signature: Data) -> Bool {
+        guard !userId.isEmpty, !message.isEmpty, signature.count == 64 else { return false }
+        let result = userId.withCString { cuser -> Int32 in
+            message.withUnsafeBytes { (m: UnsafeRawBufferPointer) -> Int32 in
+                signature.withUnsafeBytes { (s: UnsafeRawBufferPointer) -> Int32 in
+                    carrier_identity_verify(cuser,
+                                            m.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                                            message.count,
+                                            s.baseAddress!.assumingMemoryBound(to: UInt8.self))
+                }
+            }
+        }
+        return result == 1
+    }
+
+    /// This identity's 32-byte secret key, for backup or moving the identity
+    /// to another client. Store it in the Keychain only; the matching import
+    /// is `CarrierOptions.secretKey` on a fresh data directory.
+    @objc(exportSecretKeyAndReturnError:)
+    public func exportSecretKey() throws -> Data {
+        guard let carrier = ccarrier else { throw CarrierError.IllegalState }
+        var secret = [UInt8](repeating: 0, count: 32)
+        let result = secret.withUnsafeMutableBufferPointer { carrier_export_secret_key(carrier, $0.baseAddress) }
+        guard result >= 0 else { throw CarrierError.FromErrorCode(errno: getErrorCode()) }
+        defer { for i in secret.indices { secret[i] = 0 } }
+        return Data(secret)
+    }
+
     /// Create an accountless rendezvous authentication proof using the
     /// identity already loaded by this Carrier instance.
     ///

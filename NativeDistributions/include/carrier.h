@@ -126,8 +126,59 @@ extern "C" {
 /**
  * \~English
  * Carrier App max bulk message length.
+ *
+ * Raised 5 MB -> 16 MB (AgentNet) so inline file sends (FileModel base64
+ * envelope over bulkmsg) can carry ~11 MB real files, matching the JS SDK
+ * (@decentnetwork/peer >= 0.1.87) which raised the same cap and added a receive
+ * reorder buffer + retransmit so large multi-fragment bulk messages survive
+ * reordering. NOTE: the reliable send/receive window bounds throughput on lossy
+ * paths — for unlimited/streaming transfers use messenger file transfer
+ * (docs/AGENTNET_PROTOCOL.md Option B), not inline bulkmsg.
  */
-#define CARRIER_MAX_APP_BULKMSG_LEN        (5 * 1024 * 1024)
+#define CARRIER_MAX_APP_BULKMSG_LEN        (16 * 1024 * 1024)
+
+/**
+ * The bulk-message cap a legacy peer (AgentNet proto_version 0) enforces.
+ * A larger message is refused before sending to such a peer, because the
+ * peer would silently drop it.
+ */
+#define CARRIER_LEGACY_MAX_APP_BULKMSG_LEN (5 * 1024 * 1024)
+
+/**
+ * AgentNet wire-protocol version, as defined by the JavaScript peer
+ * (@decentnetwork/peer, AGENTNET_PROTO_VERSION):
+ *  0 — legacy Carrier: no client metadata, 5 MB bulk cap
+ *  1 — client metadata; 16 MB bulk messages; toxcore file-transfer channel
+ *  2 — the APPLICATION answers text delivery ACKs (the DNPACK1 envelope):
+ *      a peer that sees 2 keeps re-sending a text until the app acknowledges.
+ *
+ * The SDK by itself guarantees 1 and advertises that. Version 2 is an app
+ * capability: an app that implements the ACK sets it through
+ * carrier_set_client_info(); one that does not must leave it at 1, or every
+ * JS peer will retransmit each text to it for minutes.
+ *
+ * The SDK's own additions (identity signatures, the profile extension, the
+ * receipt timeout) need no version: signatures are verified by anyone, the
+ * profile fields are self-describing, the timeout is sender-side.
+ */
+#define CARRIER_AGENTNET_PROTO_VERSION      1
+#define CARRIER_AGENTNET_PROTO_VERSION_APP_ACK 2
+
+/** Seconds without a transport receipt before a message is re-sent through Express. */
+#define CARRIER_RECEIPT_TIMEOUT_SECONDS     30
+
+#define CARRIER_MAX_PLATFORM_LEN            15
+#define CARRIER_MAX_OS_VERSION_LEN          31
+#define CARRIER_MAX_APP_VERSION_LEN         63
+#define CARRIER_MAX_AVATAR_URL_LEN          255
+#define CARRIER_MAX_URL_LEN                 255
+#define CARRIER_MAX_ENS_LEN                 63
+#define CARRIER_MAX_PROFILE_EXTRA_LEN       255
+/** userinfo rides toxcore's status message; this is its hard packet limit. */
+#define CARRIER_MAX_USERINFO_PACKET_LEN     1007
+
+#define CARRIER_IDENTITY_SIGNATURE_BYTES    64
+#define CARRIER_IDENTITY_SECRET_BYTES       32
 
 /**
  * \~English
@@ -510,6 +561,30 @@ typedef struct CarrierFriendInfo {
      */
     CarrierPresenceStatus presence;
 } CarrierFriendInfo;
+
+/**
+ * \~English
+ * What a peer's client advertised in its userinfo (AgentNet). All zero /
+ * empty for a legacy peer.
+ */
+typedef struct CarrierClientInfo {
+    uint32_t proto_version;
+    char platform[CARRIER_MAX_PLATFORM_LEN + 1];      /* "ios" "android" "js" "darwin" "linux" "win32" */
+    char os_version[CARRIER_MAX_OS_VERSION_LEN + 1];
+    char app_version[CARRIER_MAX_APP_VERSION_LEN + 1];
+} CarrierClientInfo;
+
+/**
+ * \~English
+ * Profile extension carried in userinfo (AgentNet proto_version >= 2).
+ * Pointers, never bytes: the app fetches the avatar itself.
+ */
+typedef struct CarrierProfileExt {
+    char avatar_url[CARRIER_MAX_AVATAR_URL_LEN + 1];
+    char url[CARRIER_MAX_URL_LEN + 1];
+    char ens[CARRIER_MAX_ENS_LEN + 1];
+    char extra[CARRIER_MAX_PROFILE_EXTRA_LEN + 1];
+} CarrierProfileExt;
 
 /**
  * \~English
@@ -1050,17 +1125,97 @@ char *carrier_get_userid(Carrier *carrier, char *userid, size_t len);
 /**
  * Create a domain-separated authentication proof with this Carrier identity.
  *
- * This function performs no Carrier network operation and never returns the
- * identity secret to the caller.
+ * This function performs no Carrier network operation. It uses the identity
+ * secret already loaded by the Carrier instance, derives a shared key with
+ * the supplied ephemeral X25519 server public key, and authenticates the
+ * exact caller-provided transcript with HMAC-SHA256. The identity secret and
+ * intermediate keys are never returned.
  *
- * @param carrier           [in] Carrier node containing the identity.
- * @param server_public_key [in] 32-byte ephemeral X25519 server public key.
- * @param transcript        [in] Exact authentication transcript bytes.
+ * @param carrier           [in] Carrier node instance containing the identity.
+ * @param server_public_key [in] 32-byte ephemeral X25519 public key.
+ * @param transcript        [in] Exact protocol transcript bytes.
  * @param transcript_len    [in] Transcript length; must be 1..65536 bytes.
  * @param proof             [out] 32-byte proof buffer.
  *
- * @return 0 on success, or -1 on error.
+ * @return 0 on success, or -1 on error. Use carrier_get_error() for details.
  */
+/**
+ * \~English
+ * Set what this client advertises to friends: platform, OS and app version,
+ * and the protocol version the APP implements (0 or below the SDK's own
+ * CARRIER_AGENTNET_PROTO_VERSION means the SDK's; 2 only if the app answers
+ * DNPACK1 text ACKs). Re-publishes the userinfo. Call once after carrier_new().
+ */
+CARRIER_API
+int carrier_set_client_info(Carrier *carrier, const CarrierClientInfo *info);
+
+CARRIER_API
+int carrier_get_client_info(Carrier *carrier, CarrierClientInfo *info);
+
+/**
+ * \~English
+ * What a friend's client advertised. proto_version 0 means a legacy peer:
+ * it is not sent more than CARRIER_LEGACY_MAX_APP_BULKMSG_LEN, and no
+ * profile extension is expected from it.
+ */
+CARRIER_API
+int carrier_get_friend_client_info(Carrier *carrier, const char *friendid,
+                                   CarrierClientInfo *info);
+
+/**
+ * \~English
+ * Publish this identity's profile extension (avatar URL, link, ENS name,
+ * extra). Fails with ERROR_INVALID_ARGS when the encoded userinfo would not
+ * fit toxcore's status message (CARRIER_MAX_USERINFO_PACKET_LEN).
+ */
+CARRIER_API
+int carrier_set_self_profile_ext(Carrier *carrier, const CarrierProfileExt *ext);
+
+CARRIER_API
+int carrier_get_self_profile_ext(Carrier *carrier, CarrierProfileExt *ext);
+
+CARRIER_API
+int carrier_get_friend_profile_ext(Carrier *carrier, const char *friendid,
+                                   CarrierProfileExt *ext);
+
+/**
+ * \~English
+ * Sign a message with this Carrier identity (XEdDSA over the identity's
+ * X25519 key). Anyone holding the userid can verify with
+ * carrier_identity_verify(); the JavaScript peer and beagle-app/beagle-web
+ * verify the same bytes with curve25519-js. This is the primitive behind
+ * "Sign in with Beagle" and beagles.eth registration. Domain separation is
+ * the caller's job (e.g. "decent-auth\n<origin>\n<nonce>"). Signatures are
+ * randomized: two signatures of one message differ and both verify.
+ *
+ * @return 0 on success, -1 on error (carrier_get_error()).
+ */
+CARRIER_API
+int carrier_identity_sign(Carrier *carrier, const uint8_t *message, size_t length,
+                          uint8_t signature[CARRIER_IDENTITY_SIGNATURE_BYTES]);
+
+/**
+ * \~English
+ * Verify a signature made by carrier_identity_sign() (or the JavaScript
+ * peer) against a userid. Needs no Carrier instance.
+ *
+ * @return 1 if the signature is valid, 0 if it is not, -1 on invalid arguments.
+ */
+CARRIER_API
+int carrier_identity_verify(const char *userid, const uint8_t *message, size_t length,
+                            const uint8_t signature[CARRIER_IDENTITY_SIGNATURE_BYTES]);
+
+/**
+ * \~English
+ * Copy this identity's 32-byte secret key out, so an app can back it up or
+ * move the identity to another client (it is the same key the JavaScript
+ * peer stores). carrier.data holds it unencrypted already; an app that
+ * exports it must keep it in the platform keychain, never in a plain file.
+ * The matching import is CarrierOptions.secret_key on a fresh data dir.
+ */
+CARRIER_API
+int carrier_export_secret_key(Carrier *carrier, uint8_t secret[CARRIER_IDENTITY_SECRET_BYTES]);
+
 CARRIER_API
 int carrier_identity_create_auth_proof(
         Carrier *carrier,
@@ -2074,7 +2229,6 @@ char *carrier_get_strerror(int errnum, char *buf, size_t len);
 }
 #endif
 
-//#include <carrier_deprecated.h>
 
 #if defined(__APPLE__)
 #pragma GCC diagnostic pop
