@@ -1025,6 +1025,10 @@ internal func carrier_get_self_profile_ext(_ carrier: OpaquePointer!, _ ext: Uns
 @_silgen_name("carrier_get_friend_profile_ext")
 internal func carrier_get_friend_profile_ext(_ carrier: OpaquePointer!, _ friendId: UnsafePointer<Int8>!, _ ext: UnsafeMutablePointer<CProfileExt>!) -> Int32
 
+/** What the latest friend request from userid carried (avatar_url only; punk is info->gender). -1/ERROR_NOT_EXIST if unknown. */
+@_silgen_name("carrier_get_friend_request_profile_ext")
+internal func carrier_get_friend_request_profile_ext(_ carrier: OpaquePointer!, _ userId: UnsafePointer<Int8>!, _ ext: UnsafeMutablePointer<CProfileExt>!) -> Int32
+
 /** XEdDSA over the identity key; 64-byte signature. */
 @_silgen_name("carrier_identity_sign")
 internal func carrier_identity_sign(_ carrier: OpaquePointer!, _ message: UnsafePointer<UInt8>!, _ length: Int, _ signature: UnsafeMutablePointer<UInt8>!) -> Int32

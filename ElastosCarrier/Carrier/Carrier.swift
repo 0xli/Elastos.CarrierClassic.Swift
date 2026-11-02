@@ -357,6 +357,22 @@ public class Carrier: NSObject {
         return convertCProfileExtToCarrierProfileExt(cext)
     }
 
+    /// What the most recent friend request from `userId` carried of the
+    /// requester's profile: `avatarUrl` is the custom avatar URL ("" when the
+    /// request had none); the punk id arrives as `info.gender` of the
+    /// friend-request callback. Returns nil when no request from that userid
+    /// is remembered (never received, or evicted: the SDK keeps the last 32).
+    /// Call it from the friend-request callback and store the URL with the
+    /// app's own pending request.
+    @objc(getFriendRequestProfileExt:)
+    public func getFriendRequestProfileExt(_ userId: String) -> CarrierProfileExt? {
+        guard let carrier = ccarrier else { return nil }
+        var cext = CProfileExt()
+        let result = userId.withCString { carrier_get_friend_request_profile_ext(carrier, $0, &cext) }
+        guard result >= 0 else { return nil }
+        return convertCProfileExtToCarrierProfileExt(cext)
+    }
+
     /// Sign a message with this Carrier identity (XEdDSA over the identity's
     /// X25519 key). Anyone holding the userid verifies it with
     /// `Carrier.identityVerify`; the JavaScript peer and beagle-web verify the
