@@ -1,28 +1,14 @@
-#
-#  Be sure to run `pod spec lint carrier.podspec.podspec' to ensure this is a
-#  valid spec and to remove all comments including this before submitting the spec.
-#
-#  To learn more about Podspec attributes see https://docs.cocoapods.org/specification.html
-#  To see working Podspecs in the CocoaPods repo see https://github.com/CocoaPods/Specs/
-#
-
 Pod::Spec.new do |s|
-
-  s.name         = 'ElastosCarrierSDK'
-  s.version      = '5.3.1'
-  s.summary      = 'Elastos Carrier iOS SDK Distribution.'
-  s.swift_version = '4.0'
-  s.description  = 'Elastos carrier ios sdk framework distribution.'
-  s.homepage     = 'https://www.elastos.org'
-  s.license      = { :type => 'GPLv3', :file => 'ElastosCarrier-framework/LICENSE' }
-  s.author       = { 'carrier-dev' => 'support@elastos.org' }
-  s.platform     = :ios, '9.0'
-  s.ios.deployment_target = '9.0'
-  s.source       = {'http':'https://github.com/elastos/Elastos.NET.Carrier.Swift.SDK/releases/download/release-v5.3.1/ElastosCarrier-framework.zip'}
-  s.vendored_frameworks = 'ElastosCarrier-framework/*.framework'
-  s.source_files = 'ElastosCarrier-framework/ElastosCarrierSDK.framework/**/*.h'
-
-  s.pod_target_xcconfig = { 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'arm64' }
-  s.user_target_xcconfig = { 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'arm64' }
-
+  s.name                  = 'ElastosCarrierSDK'
+  s.version               = '6.1.0'
+  s.summary               = 'Elastos Carrier Swift SDK as shipped by Decent Network (Beagle Chat for iOS).'
+  s.description           = 'P2P identity, friends, messages, offline delivery via Express, groups, file transfer and sessions on the Carrier network. Prebuilt xcframework from branch feat/agentnet-proto-v2 and native SDK v6.1.0.'
+  s.homepage              = 'https://decent.network/docs/swift-carrier'
+  s.license               = { :type => 'GPLv3' }
+  s.author                = { 'Decent Network' => 'hi@beagle.chat' }
+  s.platform              = :ios, '15.0'
+  s.swift_version         = '5.0'
+  s.source                = { :http => "https://github.com/0xli/Elastos.CarrierClassic.Swift/releases/download/#{s.version}/ElastosCarrierSDK.xcframework.zip",
+                              :sha256 => '635e02b50d8cd7bdf2e2ee226f5cc5f7532bf28f71136069f33ab2917bf26d2d' }
+  s.vendored_frameworks   = 'ElastosCarrierSDK.xcframework'
 end
