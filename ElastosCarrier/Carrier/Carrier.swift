@@ -911,6 +911,27 @@ public class Carrier: NSObject {
     ///
     /// - returns: Return the message identifier which would be used for handler to  invoke receipt notification.
     /// - Throws: CarrierError
+    /// Send a message over the live session only. It is never parked on an
+    /// Express node (not when the friend is offline, nor later for want of a
+    /// receipt) and no receipt is reported. For frames tied to a live session,
+    /// such as file-transfer offers, data and replies.
+    ///
+    /// - Throws: CarrierError, e.g. when the friend is not connected.
+    public func sendFriendMessageLive(to target: String, withMessage msg: Data) throws {
+        guard msg.count < ELA_MAX_APP_BULKMSG_LEN else {
+            throw CarrierError.InvalidArgument
+        }
+        let result = target.withCString { (cto) -> Int32 in
+            msg.withUnsafeBytes { (raw) -> Int32 in
+                carrier_send_friend_message_live(ccarrier, cto,
+                                                 raw.baseAddress?.assumingMemoryBound(to: Int8.self), msg.count)
+            }
+        }
+        guard result >= 0 else {
+            throw CarrierError.FromErrorCode(errno: getErrorCode())
+        }
+    }
+
     public func sendFriendMessage(to target: String,
                                         withMessage msg: Data,
                                         responseHandler: @escaping CarrierFriendMessageReceiptResponseHandler) throws -> UInt32 {

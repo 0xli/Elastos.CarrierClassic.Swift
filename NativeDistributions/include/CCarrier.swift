@@ -1384,6 +1384,16 @@ internal func carrier_remove_friend(_ carrier: OpaquePointer!,
  *      Otherwise, return -1, and a specific error code can be
  *      retrieved by calling carrier_get_error().
  */
+/**
+ * Send over the live session only: never parked on Express, no receipt.
+ * 0 on success, -1 otherwise (carrier_get_error).
+ */
+@_silgen_name("carrier_send_friend_message_live")
+internal func carrier_send_friend_message_live(_ carrier: OpaquePointer!,
+                                               _ to: UnsafePointer<Int8>!,
+                                               _ msg: UnsafePointer<Int8>!,
+                                               _ len: Int) -> Int32
+
 @_silgen_name("carrier_send_friend_message")
 internal func carrier_send_friend_message(_ carrier: OpaquePointer!,
                                       _ to: UnsafePointer<Int8>!,
