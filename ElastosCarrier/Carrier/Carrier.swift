@@ -634,6 +634,19 @@ public class Carrier: NSObject {
     public func isReady() -> Bool {
         return carrier_is_ready(ccarrier)
     }
+
+    /// Tell the node that the device's network changed (Wi-Fi to mobile data
+    /// or back, a new address, a network again after none). On its next loop
+    /// it makes its UDP socket again and contacts the bootstrap nodes and TCP
+    /// relays again, instead of waiting to find out it is cut off. Safe from
+    /// any thread; does nothing on a killed instance.
+    @objc(networkChanged)
+    public func networkChanged() {
+        objc_sync_enter(self)
+        defer { objc_sync_exit(self) }
+        guard !didKill, let ccarrier = ccarrier else { return }
+        carrier_network_changed(ccarrier)
+    }
     
     /// Get current user's friend list
     ///

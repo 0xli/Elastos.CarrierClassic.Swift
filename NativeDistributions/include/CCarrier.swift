@@ -1168,6 +1168,13 @@ internal func carrier_get_self_presence(_ carrier: OpaquePointer!,
 @_silgen_name("carrier_is_ready")
 internal func  carrier_is_ready(_ carrier: OpaquePointer!) -> Bool
 
+/**
+ * Tell the node the device's network changed; it makes its UDP socket again
+ * and bootstraps again on its next loop. Any thread.
+ */
+@_silgen_name("carrier_network_changed")
+internal func carrier_network_changed(_ carrier: OpaquePointer!)
+
 
 // MARK: - Friend information
 
