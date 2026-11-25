@@ -36,10 +36,24 @@ internal extension String {
         self.init(cString: UnsafeRawPointer(pointer).assumingMemoryBound(to: CChar.self))
     }
 
+    /// Copy into a fixed-size C char array field (`T` is the array's tuple
+    /// type, so its size is the field's capacity). A string that does not fit
+    /// is cut at a character boundary; the field is always terminated and
+    /// nothing is written past it.
     @inline(__always) func writeToCCharPointer<T>(_ pointer : UnsafeMutablePointer<T>) {
+        let capacity = MemoryLayout<T>.size
+        guard capacity > 0 else { return }
+        let dst = UnsafeMutableRawPointer(pointer).assumingMemoryBound(to: CChar.self)
         self.withCString({ src in
-            let ptr = UnsafeMutableRawPointer(pointer).assumingMemoryBound(to: CChar.self)
-            strcpy(ptr, src)
+            var n = strlen(src)
+            if n >= capacity {
+                n = capacity - 1
+                while n > 0 && (UInt8(bitPattern: src[n]) & 0xC0) == 0x80 {
+                    n -= 1
+                }
+            }
+            memcpy(dst, src, n)
+            dst[n] = 0
         })
     }
 }
