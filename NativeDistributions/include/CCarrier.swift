@@ -1175,6 +1175,14 @@ internal func  carrier_is_ready(_ carrier: OpaquePointer!) -> Bool
 @_silgen_name("carrier_network_changed")
 internal func carrier_network_changed(_ carrier: OpaquePointer!)
 
+/**
+ * Pull the offline (Express) mailbox now on every configured Express node.
+ * Any thread; calls are coalesced. 0 on success, -1 otherwise
+ * (carrier_get_error).
+ */
+@_silgen_name("carrier_express_pull_now")
+internal func carrier_express_pull_now(_ carrier: OpaquePointer!) -> Int32
+
 
 // MARK: - Friend information
 

@@ -648,6 +648,29 @@ public class Carrier: NSObject {
         carrier_network_changed(ccarrier)
     }
     
+    /// Pull the offline (Express) mailbox now, on every configured Express
+    /// node, instead of waiting for the regular pull timer (minutes). For an
+    /// app that learns out of band that mail is waiting: a doorbell frame, a
+    /// push. Safe from any thread. It only queues the pull; messages and
+    /// friend requests arrive through the usual delegate callbacks. Calls are
+    /// coalesced (the pull in progress plus at most one queued), so calling it
+    /// for every notification is fine.
+    ///
+    /// - Throws: CarrierError: `IllegalState` on a killed instance, the
+    ///   SDK's "not exist" error when no Express node is configured.
+    @objc(expressPullNow:)
+    public func expressPullNow() throws {
+        objc_sync_enter(self)
+        defer { objc_sync_exit(self) }
+        guard !didKill, let ccarrier = ccarrier else { throw CarrierError.IllegalState }
+        let result = carrier_express_pull_now(ccarrier)
+        guard result >= 0 else {
+            let errno = getErrorCode()
+            Log.e(Carrier.TAG, "Express pull now error: 0x%X", errno)
+            throw CarrierError.FromErrorCode(errno: errno)
+        }
+    }
+
     /// Get current user's friend list
     ///
     /// - Returns: The list of friend information
